@@ -14,12 +14,15 @@
 #' @export
 #'
 #' @examples
-nuglmm <- function(formula, data = NULL, ...) {
+nuglmm <- function(formula, data = NULL, offset=NULL, weights = NULL, ...) {
+  
+  # save call
+  cl <- match.call()
   
   # check LHS
   environment(formula) <- parent.frame()
   
-  lhs = eval(formula[[2]], data, enclos=environment(formula))
+  lhs <- eval(formula[[2]], data, enclos=environment(formula))
   
   ## need evaluate offset within envi
   if (!is.null(lhs)) {
@@ -32,17 +35,16 @@ nuglmm <- function(formula, data = NULL, ...) {
   } else stop("Cannot evaluate response")
   
   # dimensions
-  p = ncol(lhs)
-  n = nrow(lhs)
+  p <- ncol(lhs)
+  n <- nrow(lhs)
   
   ## substitute LHS by first column of y
-  f = formula(Y[,1]~1)
+  f <- formula(Y[,1]~1)
   # replace Y by LHS of formula
-  f[[2]][[2]] = formula[[2]]
+  f[[2]][[2]] <- formula[[2]]
   # replace 1 by RHS of formula
-  f[[3]] = formula[[3]]
+  f[[3]] <- formula[[3]]
   
-  # deal with offset and weights
   
   # try a glmmTMB fit
   m = tryCatch(glmmTMB(f, data, doFit=FALSE, ...))
@@ -100,9 +102,28 @@ nuglmm <- function(formula, data = NULL, ...) {
   
   nuformula = Reduce(function(f,term) {glmmTMB:::RHSForm(f) <- makeOp(glmmTMB:::RHSForm(f), term, quote(`+`)); return(f)},newTerms) 
   
+  ## deal with offset and weights
+  if (!missing(offset)) {
+    if (is.matrix(offset)) {
+      if (all(dim(offset) == c(n,p)))
+        offset = as.vector(offset)
+      else
+        stop("Incorrect dimension of offset matrix")
+    }
+  }
+  
+  if (!missing(weights)) {
+    if (is.matrix(weights)) {
+      if (all(dim(weights) == c(n,p)))
+        weights = as.vector(weights)
+      else
+        stop("Incorrect dimension of weight matrix")
+    }
+  }
+  
   ## try to call glmmTMB
   # don't fit, just get the structure
-  m.struct = glmmTMB(nuformula, data=fr., doFit = FALSE, ...)
+  m.struct = glmmTMB(nuformula, data=fr., offset = offset, weights = weights, doFit = FALSE, ...)
   
   # needed to get mu_predict in report
   m.struct$data.tmb$whichPredict = 1:nrow(fr.)
