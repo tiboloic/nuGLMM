@@ -1,151 +1,67 @@
 ##
-# LT 15/10/2018
+# LT 28/10/2018
 #
-# a revived version of nu-glmm, based on Bolker's glmmTMB
+# alpha nu-glmm, based on Bolker's glmmTMB
 #
 
-
-nuglmm <- function(formula, data = NULL, family = gaussian(), ziformula = ~0, dispformula = ~1,
-                   weights = NULL, offset = NULL, contrasts = NULL, na.action = na.fail,
-                   se=TRUE, verbose = FALSE, doFit = TRUE)
-{
-  ## edited copy-paste from glFormula
+#' Title
+#'
+#' @param formula 
+#' @param data 
+#' @param ... 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+nuglmm <- function(formula, data = NULL, ...) {
   
-  ## edited copy-paste from glFormula
-  ## glFormula <- function(formula, data=NULL, family = gaussian,
-  ##                       subset, weights, na.action, offset,
-  ##                       contrasts = NULL, mustart, etastart,
-  ##                       control = glmerControl(), ...) {
-  call <- mf <- mc <- match.call()
-  
-  if (is.character(family)) {
-    if (family=="beta") {
-      family <- "beta_family"
-      warning("please use ",sQuote("beta_family()")," rather than ",
-              sQuote("\"beta\"")," to specify a Beta-distributed response")
-    }
-    family <- get(family, mode = "function", envir = parent.frame())
-  }
-  if (is.function(family)) {
-    ## call family with no arguments
-    family <- family()
-  }
-  ## FIXME: what is this doing? call to a function that's not really
-  ##  a family creation function?
-  if (is.null(family$family)) {
-    print(family)
-    stop("'family' not recognized")
-  }
-  fnames <- names(family)
-  if (!all(c("family","link") %in% fnames))
-    stop("'family' must contain at least 'family' and 'link' components")
-  if (length(miss_comp <- setdiff(c("linkfun","variance"),fnames))>0) {
-    warning("some components missing from ",sQuote("family"),
-            ": downstream methods may fail")
-  }
-  if (grepl("^quasi", family$family))
-    stop('"quasi" families cannot be used in glmmTMB')
-  
-  ## extract family and link information from family object
-  link <- family$link
-  
-  ## lme4 function for warning about unused arguments in ...
-  ## ignoreArgs <- c("start","verbose","devFunOnly",
-  ##   "optimizer", "control", "nAGQ")
-  ## l... <- list(...)
-  ## l... <- l...[!names(l...) %in% ignoreArgs]
-  ## do.call(checkArgs, c(list("glmer"), l...))
-  
-  # substitute evaluated versions
-  ## FIXME: denv leftover from lme4, not defined yet
-  
+  # check LHS
   environment(formula) <- parent.frame()
-  call$formula <- mc$formula <- formula
-  ## add offset-specified-as-argument to formula as + offset(...)
+  
+  lhs = eval(formula[[2]], data, enclos=environment(formula))
+  
   ## need evaluate offset within envi
-  if (!is.null(eval(substitute(offset),data,
-                    enclos=environment(formula)))) {
-    formula <- addForm0(formula,makeOp(substitute(offset),op=quote(offset)))
-  }
+  if (!is.null(lhs)) {
+    if (!is.matrix(lhs)) {
+      stop("nuglmm needs a matrix-valued response")
+    } else {
+      if (ncol(lhs) < 5)
+        stop("A minimumn of 5 columns (species) is required")
+    }
+  } else stop("Cannot evaluate response")
   
+  # dimensions
+  p = ncol(lhs)
+  n = nrow(lhs)
   
-  environment(ziformula) <- environment(formula)
-  call$ziformula <- ziformula
+  ## substitute LHS by first column of y
+  f = formula(Y[,1]~1)
+  # replace Y by LHS of formula
+  f[[2]][[2]] = formula[[2]]
+  # replace 1 by RHS of formula
+  f[[3]] = formula[[3]]
   
-  environment(dispformula) <- environment(formula)
-  call$dispformula <- dispformula
+  # deal with offset and weights
   
-  ## now work on evaluating model frame
-  m <- match(c("data", "subset", "weights", "na.action", "offset"),
-             names(mf), 0L)
-  mf <- mf[c(1L, m)]
-  mf$drop.unused.levels <- TRUE
-  mf[[1]] <- as.name("model.frame")
+  # try a glmmTMB fit
+  m = tryCatch(glmmTMB(f, data, doFit=FALSE, ...))
   
-  ## replace . in ziformula with conditional formula, ignoring offset
-  if (glmmTMB:::inForm(ziformula,quote(.))) {
-    ziformula <-
-      update(glmmTMB:::RHSForm(glmmTMB:::drop.special2(formula),as.form=TRUE),
-             ziformula)
-  }
+  .valid.family = c("gaussian", "poisson", "nbinom2", "binomial")
   
-  ## want the model frame to contain the union of all variables
-  ## used in any of the terms
-  ## combine all formulas
-  formList <- list(formula, ziformula, dispformula)
-  for (i in seq_along(formList)) {
-    f <- formList[[i]] ## abbreviate
-    ## substitute "|" by "+"; drop specials
-    f <- glmmTMB:::noSpecials(lme4:::subbars(f),delete=FALSE)
-    formList[[i]] <- f
-  }
-  combForm <- do.call(glmmTMB:::addForm,formList)
-  environment(combForm) <- environment(formula)
-  ## model.frame.default looks for these objects in the environment
-  ## of the *formula* (see 'extras', which is anything passed in ...),
-  ## so they have to be put there ...
-  for (i in c("weights", "offset")) {
-    if (!eval(bquote(missing(x=.(i)))))
-      assign(i, get(i, parent.frame()), environment(combForm))
-  }
+  if (!m$family$family %in% .valid.family)
+    stop(paste0("This implementation of nuglmm accepts only the following families: ", .valid.family))
   
-  mf$formula <- combForm
-  fr <- eval(mf,envir=environment(formula),enclos=parent.frame())
+  fr = m$fr
   
-  ## FIXME: throw an error *or* convert character to factor
-  ## convert character vectors to factor (defensive)
-  ## fr <- factorize(fr.form, fr, char.only = TRUE)
-  ## store full, original formula & offset
-  ## attr(fr,"formula") <- combForm  ## unnecessary?
-  nobs <- nrow(fr)
-  weights <- as.vector(model.weights(fr))
-  
-  #if(!is.null(weights) & !okWeights(family$family)) {
-  #  stop("'weights' are not available for this family.")
-  #}
-  
-  #if (is.null(weights)) weights <- rep(1,nobs)
-  
-  ## sanity checks (skipped!)
-  ## wmsgNlev <- checkNlevels(reTrms$ flist, n=n, control, allow.n=TRUE)
-  ## wmsgZdims <- checkZdims(reTrms$Ztlist, n=n, control, allow.n=TRUE)
-  ## wmsgZrank <- checkZrank(reTrms$Zt, n=n, control, nonSmall=1e6, allow.n=TRUE)
-  
-  ## store info on location of response variable
   respCol <- attr(terms(fr), "response")
-  names(respCol) <- names(fr)[respCol]
   
-  ## extract response variable
+  # restore original name for LHS
+  names(respCol) <- deparse(formula[[2]])
+  
+  ## response variable
   ## (name *must* be 'y' to match guts of family()$initialize
-  y <- fr[,respCol]
-  if (!is.matrix(y)) {
-    stop("nuglmm needs a matrix-valued response")
-  } else {
-    if (ncol(y) < 5)
-      stop("A minimumn of 5 columns (species) is required")
-  }
-  
-  p = ncol(y)
+  y <- lhs
   
   # modify model frame
   #  stack predictors and factors
@@ -185,8 +101,8 @@ nuglmm <- function(formula, data = NULL, family = gaussian(), ziformula = ~0, di
   nuformula = Reduce(function(f,term) {glmmTMB:::RHSForm(f) <- makeOp(glmmTMB:::RHSForm(f), term, quote(`+`)); return(f)},newTerms) 
   
   ## try to call glmmTMB
-  # don't fit, just get the TMBstruct
-  m.struct = glmmTMB(nuformula, data=fr., family = family, doFit = FALSE)
+  # don't fit, just get the structure
+  m.struct = glmmTMB(nuformula, data=fr., doFit = FALSE, ...)
   
   # needed to get mu_predict in report
   m.struct$data.tmb$whichPredict = 1:nrow(fr.)
@@ -200,6 +116,7 @@ nuglmm <- function(formula, data = NULL, family = gaussian(), ziformula = ~0, di
   
   class(m) <- c("nuglmm", class(m))
   m
+  
 }
 
 nuglmm.anova = function(m1, m2, method="", nboot = 100, ncpus = 1) {
