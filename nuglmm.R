@@ -206,6 +206,12 @@ simulateone = function(m, iboot) {
   
   # response
   y = m$obj$env$data$yobs
+  # for some reason yobs has NaNs and values differ from supplied data
+  # FIXME is this a bug ?
+  
+  # in the meantime use frame
+  respCol <- attr(terms(m$frame), "response")
+  y <- m$frame[,respCol]
   n = m$n
   
   # get mus: without ranefs from report, with ranefs, simulate  
@@ -224,15 +230,14 @@ simulateone = function(m, iboot) {
   #}
   y.star = switch(m$modelInfo$family$family, 
                   "gaussian" = {qnorm(resamp(pnorm(y, mus, phi)), mus, phi)},
-                  "poisson" = {qpois(resamp(pmin(runif(length(y), min = ppois(y-1, mus), max = ppois(y, mus)), 1-1e-8)), mus)},
+                  "poisson" = {w = runif(n); qpois(resamp(pmin(w*ppois(y-1, mus) + (1-w)*ppois(y, mus), 1-1e-8)), mus)},
                   "nbinom1" = {0},
-                  "nbinom2" = {qnbinom(resamp(pmin(runif(length(y),
-                                                         min = pnbinom(y-1, mu = mus, size = phi),
-                                                         max = pnbinom(y, mu = mus, size = phi)), 1-1e-8)), mu = mus, size=phi)},
+                  "nbinom2" = {w = runif(n); qnbinom(resamp(pmin(w * pnbinom(y-1, mu = mus, size = phi) + (1-w) * pnbinom(y, mu = mus, size = phi), 1-1e-8)), mu = mus, size=phi)},
                   "binomial" = {rbinom(resamp(runif(length(y), min = pbinom(y-1, 1, mus), max = pbinom(y, 1, mus))), 1, mus)})
   
-  
-  y.star       
+  if (!all(is.finite(y.star)))
+    stop("Infinite values in PITtrap")
+  as.numeric(y.star)       
   
 }
 
@@ -240,8 +245,14 @@ simulateone = function(m, iboot) {
 refitone = function(m1, m2, y.star) {
   
   # change data in TMBstruct 
-  m1$TMBstruct$data.tmb$yobs = y.star
-  m2$TMBstruct$data.tmb$yobs = y.star
+  #m1$TMBstruct$data.tmb$yobs = y.star
+  #m2$TMBstruct$data.tmb$yobs = y.star
+
+  m1$obj$env$data$yobs = y.star
+  m2$obj$env$data$yobs = y.star
+  
+  m1$obj$par = with(m1$obj$env, last.par.best[-random])
+  m2$obj$par = with(m2$obj$env, last.par.best[-random])
   
   # weaken convergence criteria
   #m1$TMBstruct$control$optCtrl[["rel.tol"]] = 1e-3
@@ -253,10 +264,11 @@ refitone = function(m1, m2, y.star) {
   
   # possibly change control parameters to speed thinks up
   # refit
-  m1.star = glmmTMB:::fitTMB(m1$TMBstruct)
-  m2.star = glmmTMB:::fitTMB(m2$TMBstruct)
-  
+  #m1.star = glmmTMB:::fitTMB(m1$TMBstruct)
+  #m2.star = glmmTMB:::fitTMB(m2$TMBstruct)
+  fit1 = do.call("optim", c(m1$obj, list(control=list(abstol=1e-3, reltol=1e-3))))
+  fit2 = do.call("optim", c(m2$obj, list(control=list(abstol=1e-3, reltol=1e-3))))  
   # return log of likelihood ratio
-  return(m1.star$fit$objective - m2.star$fit$objective)
+  return(fit1$value - fit2$value)
 }
 
