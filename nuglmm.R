@@ -46,15 +46,18 @@ nuglmm <- function(formula, data = NULL, offset=NULL, weights = NULL, ...) {
   f[[3]] <- formula[[3]]
   
   
-  # try a glmmTMB fit
-  m = tryCatch(glmmTMB(f, data, doFit=FALSE, ...))
+  # call glmmTMB to chaeck arguments and get frame
+  m <- tryCatch(glmmTMB(f, data, doFit=FALSE, ...), error = function(e) e)
+  if ("error" %in% class(m))
+    stop(m$message)
   
-  .valid.family = c("gaussian", "poisson", "nbinom2", "binomial")
+  .valid.family <- c("gaussian", "poisson", "nbinom2", "binomial")
   
   if (!m$family$family %in% .valid.family)
     stop(paste0("This implementation of nuglmm accepts only the following families: ", .valid.family))
   
-  fr = m$fr
+  # retrieve frame
+  fr <- m$fr
   
   respCol <- attr(terms(fr), "response")
   
@@ -86,7 +89,7 @@ nuglmm <- function(formula, data = NULL, offset=NULL, weights = NULL, ...) {
   }
   
   # list of terms to be added, initialized with original formula
-  newTerms = list(formula)
+  newTerms <- list(formula)
   
   
   # treat existing random effects
@@ -98,15 +101,15 @@ nuglmm <- function(formula, data = NULL, offset=NULL, weights = NULL, ...) {
   }
   
   # build random effect term on fixed parameters across species
-  newTerms[[length(newTerms) + 1]] = makeOp(makeOp(lme4:::nobars(formula)[[3]], quote(.spp), quote(`|`)), op=quote(`diag`))
+  newTerms[[length(newTerms) + 1]] <- makeOp(makeOp(lme4:::nobars(formula)[[3]], quote(.spp), quote(`|`)), op=quote(`diag`))
   
-  nuformula = Reduce(function(f,term) {glmmTMB:::RHSForm(f) <- makeOp(glmmTMB:::RHSForm(f), term, quote(`+`)); return(f)},newTerms) 
+  nuformula <- Reduce(function(f,term) {glmmTMB:::RHSForm(f) <- makeOp(glmmTMB:::RHSForm(f), term, quote(`+`)); return(f)},newTerms) 
   
   ## deal with offset and weights
   if (!missing(offset)) {
     if (is.matrix(offset)) {
       if (all(dim(offset) == c(n,p)))
-        offset = as.vector(offset)
+        offset <- as.vector(offset)
       else
         stop("Incorrect dimension of offset matrix")
     }
@@ -115,7 +118,7 @@ nuglmm <- function(formula, data = NULL, offset=NULL, weights = NULL, ...) {
   if (!missing(weights)) {
     if (is.matrix(weights)) {
       if (all(dim(weights) == c(n,p)))
-        weights = as.vector(weights)
+        weights <- as.vector(weights)
       else
         stop("Incorrect dimension of weight matrix")
     }
@@ -123,17 +126,17 @@ nuglmm <- function(formula, data = NULL, offset=NULL, weights = NULL, ...) {
   
   ## try to call glmmTMB
   # don't fit, just get the structure
-  m.struct = glmmTMB(nuformula, data=fr., offset = offset, weights = weights, doFit = FALSE, ...)
+  m.struct <- glmmTMB(nuformula, data=fr., offset = offset, weights = weights, doFit = FALSE, ...)
   
   # needed to get mu_predict in report
-  m.struct$data.tmb$whichPredict = 1:nrow(fr.)
+  m.struct$data.tmb$whichPredict <- 1:nrow(fr.)
   
   # do the fit
-  m = glmmTMB:::fitTMB(m.struct)
+  m <- glmmTMB:::fitTMB(m.struct)
   
-  m$n=nrow(fr)
-  m$p = p
-  m$TMBstruct = m.struct
+  m$n <- nrow(fr)
+  m$p <- p
+  m$TMBstruct <- m.struct
   
   class(m) <- c("nuglmm", class(m))
   m
