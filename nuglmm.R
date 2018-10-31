@@ -4,6 +4,9 @@
 # alpha nu-glmm, based on Bolker's glmmTMB
 #
 
+require(boot)
+require(glmmTMB)
+
 #' Title
 #'
 #' @param formula 
@@ -46,7 +49,7 @@ nuglmm <- function(formula, data = NULL, offset=NULL, weights = NULL, ...) {
   f[[3]] <- formula[[3]]
   
   
-  # call glmmTMB to chaeck arguments and get frame
+  # call glmmTMB to check arguments and get frame
   m <- tryCatch(glmmTMB(f, data, doFit=FALSE, ...), error = function(e) e)
   if ("error" %in% class(m))
     stop(m$message)
@@ -141,134 +144,5 @@ nuglmm <- function(formula, data = NULL, offset=NULL, weights = NULL, ...) {
   class(m) <- c("nuglmm", class(m))
   m
   
-}
-
-nuglmm.anova = function(m1, m2, method="", nboot = 100, ncpus = 1) {
-  # LT 23/10/2018
-  # first version of nuglmm anova using PITtrap !
-  # m1 is the null model
-  # m2 is the alternate
-  
-  # simulate random effects
-  # simulating random effects in R is painfull if not resampling
-  # just resample rows in R for alpha version ?
-  
-  # idea 1:
-  # ensure I have the predicted mu in report, change the random effects and use report
-  # example:
-  ## get best fit parameters
-  # ps = m2$obj$env$last.par.best
-  ## set random params to resamp value
-  # ps[random] = resampled Z * b
-  ## get mu
-  # mu = obj$report(ps)$mu_predict
-  
-  # FIXME control arguments
-  # models must have class nuglmm
-  # models must have same n, p, etc.
-  # how to cheack for nestedness ?
-  
-  LR.obs = m1$fit$objective - m2$fit$objective
-  
-  # weaken convergence criteria
-  m1$TMBstruct$control$optCtrl[["rel.tol"]] = 1e-3
-  m2$TMBstruct$control$optCtrl[["rel.tol"]] = 1e-3
-  m1$TMBstruct$control$optCtrl[["abs.tol"]] = 1e-3
-  m2$TMBstruct$control$optCtrl[["abs.tol"]] = 1e-3
-  
-  # warm start from bestfit parameters
-  m1$TMBstruct$parameters = m1$obj$env$parList()
-  m2$TMBstruct$parameters = m2$obj$env$parList()
-  
-  fn = function(orig, iboot, m1, m2) {
-    y.star = simulateone(m1, iboot)
-    return(refitone(m1, m2, y.star))
-  }
-  
-  options(warn = -1)
-  sims = boot(1:m1$n, fn, nboot-1, parallel="snow", ncpus=ncpus, m1=m1, m2=m2)
-  options(warn = 0)
-  
-  LR.star = c(LR.obs, sims$t)
-  return(mean(LR.obs<=LR.star))
-}
-
-simulateone = function(m, iboot) {
-  # iboot is a resampling of the rows
-  
-  # resample ranefs
-  #Zu = m$obj$env$data$Z %*% m$obj$env$parList()$b
-  #Zu.star = as.vector(matrix(Zu, nrow=n)[iboot,])
-  #pars = m$obj$env$last.par.best
-  # resampling is too complicate in case there is a random effect on a quantitative predictor
-  # just do it conditional to the random effects or simulate the random effects
-  # to simulate, could just put beta to 0 and simulate and get mu ?
-  
-  # response
-  y = m$obj$env$data$yobs
-  # for some reason yobs has NaNs and values differ from supplied data
-  # FIXME is this a bug ?
-  
-  # in the meantime use frame
-  respCol <- attr(terms(m$frame), "response")
-  y <- m$frame[,respCol]
-  n = m$n
-  
-  # get mus: without ranefs from report, with ranefs, simulate  
-  # simulate ranefs (parametric bootstrap)
-  mus = m$obj$env$simulate()$mu_predict
-  
-  # resampling rows function
-  resamp = function(pits) {
-    as.vector(matrix(pits, nrow=n)[iboot,])
-  }
-  
-  # get dispersion parameters if any
-  # FIXME, should check if any dispersion info rather than look at names
-  #if (any(names(m$fit$par)=="betad")) {
-  phi = with(m$obj$env, exp(data$Xd %*% parList()$betad + ifelse(is.null(data$doffset), 0, data$doffset)))
-  #}
-  y.star = switch(m$modelInfo$family$family, 
-                  "gaussian" = {qnorm(resamp(pnorm(y, mus, phi)), mus, phi)},
-                  "poisson" = {w = runif(n); qpois(resamp(pmin(w*ppois(y-1, mus) + (1-w)*ppois(y, mus), 1-1e-8)), mus)},
-                  "nbinom1" = {0},
-                  "nbinom2" = {w = runif(n); qnbinom(resamp(pmin(w * pnbinom(y-1, mu = mus, size = phi) + (1-w) * pnbinom(y, mu = mus, size = phi), 1-1e-8)), mu = mus, size=phi)},
-                  "binomial" = {rbinom(resamp(runif(length(y), min = pbinom(y-1, 1, mus), max = pbinom(y, 1, mus))), 1, mus)})
-  
-  if (!all(is.finite(y.star)))
-    stop("Infinite values in PITtrap")
-  as.numeric(y.star)       
-  
-}
-
-# refit
-refitone = function(m1, m2, y.star) {
-  
-  # change data in TMBstruct 
-  #m1$TMBstruct$data.tmb$yobs = y.star
-  #m2$TMBstruct$data.tmb$yobs = y.star
-
-  m1$obj$env$data$yobs = y.star
-  m2$obj$env$data$yobs = y.star
-  
-  m1$obj$par = with(m1$obj$env, last.par.best[-random])
-  m2$obj$par = with(m2$obj$env, last.par.best[-random])
-  
-  # weaken convergence criteria
-  #m1$TMBstruct$control$optCtrl[["rel.tol"]] = 1e-3
-  #m2$TMBstruct$control$optCtrl[["rel.tol"]] = 1e-3
-  
-  # warm start from bestfit parameters
-  #m1$TMBstruct$parameters = m1$obj$env$parList()
-  #m2$TMBstruct$parameters = m2$obj$env$parList()
-  
-  # possibly change control parameters to speed thinks up
-  # refit
-  #m1.star = glmmTMB:::fitTMB(m1$TMBstruct)
-  #m2.star = glmmTMB:::fitTMB(m2$TMBstruct)
-  fit1 = do.call("optim", c(m1$obj, list(control=list(abstol=1e-3, reltol=1e-3))))
-  fit2 = do.call("optim", c(m2$obj, list(control=list(abstol=1e-3, reltol=1e-3))))  
-  # return log of likelihood ratio
-  return(fit1$value - fit2$value)
 }
 
