@@ -103,18 +103,20 @@ pittrap <- function (m1, m2, nboot, ...) {
   # FIX ME: do parallel stuff
   
   fn = function(orig, iboot, m1, m2) {
+    require(glmmTMB)
+    source("Methods.R")
     y.star = simulateone(m1, iboot)
     return(refitone(m1, m2, y.star))
   }
   
   options(warn = -1)
-  sims = boot(1:m1$n, fn, nboot-1, parallel="snow", ncpus=1, m1=m1, m2=m2)
+  sims = boot(1:m1$n, fn, nboot, parallel="snow", ncpus=2, m1=m1, m2=m2)
   options(warn = 0)
   
-  LR.star = c(LR.obs, pmax(sims$t, 0))
+  LR.star = c(LR.obs, pmax(sims$t[-1], 0))
   
   # FIXME: make this optional or relocate it
-  print(summary(LR.star))
+  #print(summary(LR.star))
   return(LR.star)
   
 }
@@ -197,4 +199,44 @@ refitone = function(m1, m2, y.star) {
   # return log of likelihood ratio
   #return(fit1$value - fit2$value)
   return(m1.star$fit$objective - m2.star$fit$objective)
+}
+
+# residuals, with PIT-residuals added
+
+##' Compute residuals for a nuglmm object
+##'
+##' @param object a \dQuote{nuglmm} object
+##' @param type (character) residual type
+##' @param \dots ignored, for method compatibility
+##' @importFrom stats fitted predict model.response residuals
+##' @export
+residuals.nuglmm <- function(object, type=c("response", "pearson", "PIT"), ...) {
+  type <- match.arg(type)
+  if (type == "PIT") {
+
+    # get response
+    y <- model.response(object$frame)
+
+    # get mus
+    mus <- predict(object,type="response")
+    
+    n <- object$n
+    
+    # dispersion
+    phi <- with(object$obj$env, exp(data$Xd %*% parList()$betad + ifelse(is.null(data$doffset), 0, data$doffset)))
+
+    # try sum on log scale to improve numerical stability ?
+    # see https://andrewgelman.com/2016/06/11/log-sum-of-exponentials/
+    log_sum_exp <- function(u, v) {max(u, v) + log(exp(u - max(u, v)) + exp(v - max(u, v)))}
+    squeeze <- function(u) {(1.0 - .Machine$double.eps) * (u - .5) + .5}
+    
+    switch(object$modelInfo$family$family, 
+                    "gaussian" = {pnorm(y, mus, phi)},
+                    "poisson" = {w = runif(n); pmin(w*ppois(y-1, mus) + (1-w)*ppois(y, mus), 1-1e-8)},
+                    "nbinom2" = {w = runif(n); pmin(w * pnbinom(y-1, mu = mus, size = phi) + (1-w) * pnbinom(y, mu = mus, size = phi), 1-1e-8)},
+                    "binomial" = {w = runif(n); w * pbinom(y-1, 1, mus) + (1-w) * pbinom(y, 1, mus)})
+    
+  } else {
+    matrix(glmmTMB:::residuals.glmmTMB(object, type, ...), nrow = object$n)
+  }
 }
