@@ -56,14 +56,15 @@ anova.nuglmm <- function (object, ..., nboot=0, model.names = NULL)
     dfChisq <- c(NA, diff(Df))
 
     if (nboot>0) {
-      null.dists <- matrix(0, nboot, length(mods)-1)
+      null.dists <- matrix(0, nboot+1, length(mods)-1)
       for (imod in 1:(length(mods)-1))
         null.dists[,imod] <- pittrap(mods[[imod]], mods[[imod + 1]], nboot, ...)
       val <- data.frame(Df = Df, AIC = .sapply(llks, AIC), 
                         BIC = .sapply(llks, BIC), logLik = llk, deviance = -2 * 
-                          llk, LRT = c(NA,null.dists[1,]), `LRT Df` = dfChisq,
-                        `Pr(>LRT)` = apply(null.dists, 2, function(null.dist) mean(null.dist[1]<=null.dist)), row.names = names(mods), 
+                          llk, LR = c(NA,null.dists[1,]),# `LRT Df` = dfChisq,
+                        `Pr(>LR)` = c(NA, apply(null.dists, 2, function(null.dist) mean(null.dist[1]<=null.dist))), row.names = names(mods), 
                         check.names = FALSE)
+      header <- c(paste0("Null distribution of likelihood ratio estimated by ", nboot, " PITtrap simulations"), header)
       
     } else {
     val <- data.frame(Df = Df, AIC = .sapply(llks, AIC), 
