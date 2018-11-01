@@ -86,34 +86,84 @@ anova.nuglmm <- function (object, ..., nboot=0, model.names = NULL)
 
 # build null distribution of likelihood ratio under PITtrap
 # m1 is the null model, m2 is the alternative model, nboot is the number of simulations
-pittrap <- function (m1, m2, nboot, ...) {
+pittrap <- function (m1, m2, nboot, ..., parallel = c("no", "multicore", "snow"),
+                     ncpus = getOption("nuglmm.ncpus"),
+                     cl = NULL) {
   
-  LR.obs = m1$fit$objective - m2$fit$objective
+  # sort out parallel stuff
+  # inspired by boot
+  if (missing(ncpus))
+    ncpus <- parallel::detectCores()
+  if (missing(parallel)) {
+    parallel <- getOption("nuglmm.parallel")
+    if (is.null(parallel)) {
+      # check number of cores
+      parallel <- ifelse(parallel::detectCores()>1, "multicore", "no")
+    }
+  }
+  parallel <- match.arg(parallel)
+  have_mc <- have_snow <- FALSE
+  if (parallel != "no" && ncpus > 1L) {
+    if (parallel == "multicore") {
+      have_mc <- .Platform$OS.type != "windows"
+      have_snow <- .Platform$OS.type == "windows"
+    }
+    else if (parallel == "snow") 
+      have_snow <- TRUE
+    if (!have_mc && !have_snow) 
+      ncpus <- 1L
+    #loadNamespace("parallel")
+  }
   
-  # weaken convergence criteria
-  #m1$TMBstruct$control$optCtrl[["rel.tol"]] = 1e-3
-  #m2$TMBstruct$control$optCtrl[["rel.tol"]] = 1e-3
-  #m1$TMBstruct$control$optCtrl[["abs.tol"]] = 1e-3
-  #m2$TMBstruct$control$optCtrl[["abs.tol"]] = 1e-3
+  # observed statistics
+  LR.obs <- m1$fit$objective - m2$fit$objective
   
   # warm start from bestfit parameters
-  m1$TMBstruct$parameters = m1$obj$env$parList()
-  m2$TMBstruct$parameters = m2$obj$env$parList()
+  m1$TMBstruct$parameters <- m1$obj$env$parList()
+  m2$TMBstruct$parameters <- m2$obj$env$parList()
   
   # FIX ME: do parallel stuff
   
-  fn = function(orig, iboot, m1, m2) {
-    require(glmmTMB)
-    source("Methods.R")
-    y.star = simulateone(m1, iboot)
-    return(refitone(m1, m2, y.star))
-  }
+  if (have_snow)
+    FUN = function(i, m1, m2) {
+      # when nuglmm is released as a package, require(nuglmm) should be enough
+      require(glmmTMB)
+      source("Methods.R")
+      y.star = simulateone(m1)
+      return(refitone(m1, m2, y.star))
+    }
+  else
+    FUN = function(i) {
+      y.star = simulateone(m1)
+      return(refitone(m1, m2, y.star))
+    }
   
-  options(warn = -1)
-  sims = boot(1:m1$n, fn, nboot, parallel="snow", ncpus=2, m1=m1, m2=m2)
-  options(warn = 0)
+  if (ncpus > 1) {
+    if (have_mc) {
+      L <- parallel::mclapply(1:nboot, FUN, mc.cores = ncpus)
+    } else if (have_snow) {
+      if (is.null(cl)) {
+        ## start cluster
+        new_cl <- TRUE
+        cl <- parallel::makePSOCKcluster(rep("localhost", ncpus))
+      }
+      ## run
+      L <- parallel::clusterApply(cl, 1:nboot, FUN, m1=m1, m2=m2)
+      if (new_cl) {
+        ## stop cluster
+        parallel::stopCluster(cl)
+      }
+    }} else { ## non-parallel
+      L <- lapply(1:nboot, FUN)
+    }
   
-  LR.star = c(LR.obs, pmax(sims$t[-1], 0))
+  L <- unlist(L)
+
+  #options(warn = -1)
+  #sims = boot(1:m1$n, fn, nboot, parallel="snow", ncpus=2, m1=m1, m2=m2)
+  #options(warn = 0)
+  
+  LR.star = c(LR.obs, pmax(L, 0))
   
   # FIXME: make this optional or relocate it
   #print(summary(LR.star))
@@ -121,30 +171,23 @@ pittrap <- function (m1, m2, nboot, ...) {
   
 }
 
-simulateone = function(m, iboot) {
-  # iboot is a resampling of the rows
-  
-  # resample ranefs
-  #Zu = m$obj$env$data$Z %*% m$obj$env$parList()$b
-  #Zu.star = as.vector(matrix(Zu, nrow=n)[iboot,])
-  #pars = m$obj$env$last.par.best
-  # resampling is too complicate in case there is a random effect on a quantitative predictor
-  # just do it conditional to the random effects or simulate the random effects
-  # to simulate, could just put beta to 0 and simulate and get mu ?
+simulateone = function(m) {
+
+  iboot <- sample.int(m$n, replace=TRUE)
   
   # response
-  y = m$obj$env$data$yobs
+  #y = m$obj$env$data$yobs
   # for some reason yobs has NaNs and values differ from supplied data
   # FIXME is this a bug ?
   
   # in the meantime use frame
   respCol <- attr(terms(m$frame), "response")
   y <- m$frame[,respCol]
-  n = m$n
+  n <- m$n
   
   # get mus: without ranefs from report, with ranefs, simulate  
   # simulate ranefs (parametric bootstrap)
-  mus = m$obj$env$simulate()$mu_predict
+  mus <- m$obj$env$simulate()$mu_predict
   
   # resampling rows function
   resamp = function(pits) {
@@ -154,9 +197,9 @@ simulateone = function(m, iboot) {
   # get dispersion parameters if any
   # FIXME, should check if any dispersion info rather than look at names
   #if (any(names(m$fit$par)=="betad")) {
-  phi = with(m$obj$env, exp(data$Xd %*% parList()$betad + ifelse(is.null(data$doffset), 0, data$doffset)))
+  phi <- with(m$obj$env, exp(data$Xd %*% parList()$betad + ifelse(is.null(data$doffset), 0, data$doffset)))
   #}
-  y.star = switch(m$modelInfo$family$family, 
+  y.star <- switch(m$modelInfo$family$family, 
                   "gaussian" = {qnorm(resamp(pnorm(y, mus, phi)), mus, phi)},
                   "poisson" = {w = runif(n); qpois(resamp(pmin(w*ppois(y-1, mus) + (1-w)*ppois(y, mus), 1-1e-8)), mus)},
                   "nbinom1" = {0},
