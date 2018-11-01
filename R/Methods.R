@@ -8,6 +8,22 @@
 # add parameter nboot,
 # if nboot > 0, perform PITtrap
 
+##' Analysis of Deviance for nuglmm fits
+##'
+##' Computes Anova table for undelying models.
+##' @name anova
+##' @title Analysis of Deviance for nuglmm fits
+##' @aliases anova anova.nuglmm
+##' @docType methods
+##' @param object any fitted \dQuote{nuglmm} model
+##' @param \dots optional additional arguments. .
+##' @return a named, numeric vector of fixed-effects estimates.
+##' @keywords models
+##' @examples
+##' data(Tasmania, package = "mvabund")
+##' m1 = nuglmm(abund ~ treatment * block, data=Tasmania, family="poisson")
+##' m2 = nuglmm(abund ~ treatment * block, data=Tasmania, family="nbinom2")
+##' anova(m1, m2)
 ##' @importFrom methods is
 ##' @importFrom stats var getCall pchisq anova
 ##' @export
@@ -128,17 +144,18 @@ pittrap <- function (m1, m2, nboot, ..., parallel = c("no", "multicore", "snow")
   if (have_snow)
     FUN = function(i, m1, m2) {
       # when nuglmm is released as a package, require(nuglmm) should be enough
-      require(glmmTMB)
-      source("Methods.R")
-      y.star = simulateone(m1)
-      return(refitone(m1, m2, y.star))
+      require(nuglmm)
+      #source("Methods.R")
+      y.star = nuglmm:::simulateone(m1)
+      return(nuglmm:::refitone(m1, m2, y.star))
     }
   else
     FUN = function(i) {
       y.star = simulateone(m1)
       return(refitone(m1, m2, y.star))
     }
-  
+
+  options(warn = -1)  
   if (ncpus > 1) {
     if (have_mc) {
       L <- parallel::mclapply(1:nboot, FUN, mc.cores = ncpus)
@@ -157,7 +174,7 @@ pittrap <- function (m1, m2, nboot, ..., parallel = c("no", "multicore", "snow")
     }} else { ## non-parallel
       L <- lapply(1:nboot, FUN)
     }
-  
+  options(warn = 0)
   L <- unlist(L)
 
   #options(warn = -1)

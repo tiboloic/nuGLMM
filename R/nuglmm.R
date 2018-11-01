@@ -4,19 +4,28 @@
 # alpha nu-glmm, based on Bolker's glmmTMB
 #
 
-require(boot)
 require(glmmTMB)
 
-#' Title
-#'
-#' @param formula 
-#' @param data 
-#' @param ... 
-#'
-#' @return
-#' @export
-#'
-#' @examples
+##' Fits nuglmm models to multiavriate abundance data
+##'
+##' @name nuglmm
+##' @title Generalized LMM for multivariate abundance data
+##' @param formula model specification
+##' @param data dataframe
+##' @param \dots optional additional arguments. Currently none are used in any
+##' methods.
+##' @return a fitted nuglmm model.
+##' @keywords models
+##' @examples
+##' data(Tasmania, package = "mvabund")
+##' m1 = nuglmm(abund ~ treatment * block, data=Tasmania, family="poisson")
+##' m2 = nuglmm(abund ~ treatment * block, data=Tasmania, family="nbinom2")
+##' anova(m1, m2)
+##' @importFrom glmmTMB glmmTMB
+##' @importFrom lme4 subbars findbars mkReTrms nobars
+##' @importFrom methods is
+##' @importFrom stats var getCall pchisq anova
+##' @export
 nuglmm <- function(formula, data = NULL, offset=NULL, weights = NULL, ...) {
   
   # save call
