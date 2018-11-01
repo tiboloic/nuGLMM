@@ -40,7 +40,7 @@ Y2 = apply(Y, c(1,2), function(y) ifelse(y>0, 1, 0))
 m1 = nuglmm(Y2~x, family=binomial(cloglog))
 m2 = nuglmm(Y2~x + (1|grp), family=binomial(cloglog))
 anova(m1, m2)
-system.time(print(nuglmm.anova(m1,m2, nboot=10)))
+system.time(print(anova(m1,m2, nboot=10)))
 #m = glmmTMB(y~x + (1|grp), family=poisson())
 #m2 = nuglmm(Y~x + (1|grp), family=poisson())
 
@@ -48,7 +48,7 @@ system.time(print(nuglmm.anova(m1,m2, nboot=10)))
 m1 = nuglmm(Y~x, family=poisson())
 m2 = nuglmm(Y~x + (1|grp), family="poisson")
 anova(m1,m2)
-system.time(print(nuglmm.anova(m1,m2, nboot=500)))
+system.time(print(anova(m1,m2, nboot=500)))
 
 
 
@@ -64,31 +64,28 @@ m1 = nuglmm(abund ~ treatment * block, data=Tasmania, family="poisson")
 m2 = nuglmm(abund ~ treatment * block, data=Tasmania, family="nbinom2")
 anova(m1, m2)
 # FIXME BUG
-#system.time(print(nuglmm.anova(m1,m2, nboot=50)))
+system.time(print(anova(m1,m2, nboot=99)))
 
 # test for block
 m1 = nuglmm(abund ~ treatment, data=Tasmania, family="nbinom2")
 m2 = nuglmm(abund ~ treatment + block, data=Tasmania, family="nbinom2")
 anova(m1, m2)
 # p = 0.01 , 20s 
-system.time(print(nuglmm.anova(m1,m2, nboot=50)))
+system.time(print(anova(m1,m2, nboot=99)))
 
 # test for treat
 m1 = nuglmm(abund ~ block, data=Tasmania, family="nbinom2")
 m2 = nuglmm(abund ~ treatment + block, data=Tasmania, family="nbinom2")
 anova(m1, m2)
 # p = 0.01 , 25s 
-nuglmm.anova(m1,m2)
+system.time(print(anova(m1,m2, nboot=99)))
 
 # test for fixed effect interaction between treatment and block
 m1 = nuglmm(abund ~ treatment + block, data=Tasmania, family="nbinom2")
 m2 = nuglmm(abund ~ treatment * block, data=Tasmania, family="nbinom2")
 
 anova(m1,m2)
-nuglmm.anova(m1,m2)
-# p = 0.08, 25s
-system.time(print(nuglmm.anova(m1,m2, nboot=500)))
-# p = 0.10 with 500 simul
+system.time(print(anova(m1,m2, nboot=99)))
 
 # compare with mvabund
 tas = as.mvabund(Tasmania$abund)
