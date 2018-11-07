@@ -251,6 +251,10 @@ refitone = function(m1, m2, y.star) {
   m1$TMBstruct$parameters = m1$obj$env$parList()
   m2$TMBstruct$parameters = m2$obj$env$parList()
   
+  # make sure we don't run sdrepport()
+  m1$TMBstruct$se = FALSE
+  m2$TMBstruct$se = FALSE
+  
   # possibly change control parameters to speed thinks up
   # refit
   m1.star = glmmTMB:::fitTMB(m1$TMBstruct)
