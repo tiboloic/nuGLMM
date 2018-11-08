@@ -4,27 +4,47 @@
 # alpha nu-glmm, based on Bolker's glmmTMB
 #
 
-require(glmmTMB)
-
-##' Fits nuglmm models to multiavriate abundance data
-##'
-##' @name nuglmm
-##' @title Generalized LMM for multivariate abundance data
-##' @param formula model specification
-##' @param data dataframe
-##' @param \dots optional additional arguments. Currently none are used in any
-##' methods.
+##' @title Generalized linear mixed effect models for multivariate abundance data
+##' @description Fit glmms to multivariate abundance data using glmmTMB
+##' @param formula combined fixed and random effects formula, following lme4 and glmmTMB
+##'     syntax. The left hand side must evaluate to an abundance matrix with species in columns.
+##' @param data data frame
+##' @param family a family function, a character string naming a family function, or the result of a call to a family function family (variance/link function) information; see \code{\link{family}} for generic discussion of families or \code{\link{family_glmmTMB}} for details of \code{glmmTMB}-specific families.
+##'     Only \code{gaussian()}, \code{binomial()}, \code{poisson()} and \code{nbinom2()} are compatible with nuglmm.
+##' @param ziformula 
+##' Zero-inflation is not yet available in nuglmm.
+##' @param dispformula a \emph{one-sided} formula for dispersion containing only fixed effects: the
+##'     default \code{~1} specifies the standard dispersion given any family.
+##'     The argument is ignored for families that do not have a dispersion parameter.
+##'     For an explanation of the dispersion parameter for each family, see (\code{\link{sigma}}).
+##'     The dispersion model uses a log link. 
+##'     In Gaussian mixed models, \code{dispformula=~0} fixes the parameter to be 0, forcing variance into the random effects.
+##' @param weights weights, as in \code{glm}. Not automatically scaled to have sum 1.
+##' @param offset offset for conditional model (only)
+##' @param contrasts an optional list, e.g. \code{list(fac1="contr.sum")}. See the \code{contrasts.arg} of \code{\link{model.matrix.default}}.
+##' @param na.action how to handle missing values (see \code{\link{na.action}} and \code{\link{model.frame}}); from \code{\link{lm}}, \dQuote{The default is set by the \code{\link{na.action}} setting of \code{\link{options}}, and is \code{\link{na.fail}} if that is unset.  The \sQuote{factory-fresh} default is \code{\link{na.omit}}.}
 ##' @return a fitted nuglmm model.
+##' @details
+##' \itemize{
+##' \item binomial models with more than one trial (i.e., not binary/Bernoulli)
+##' must be specified in the form \code{prob ~ ..., weights = N}.
+##' }
+##' @references
+##' \itemize{
+##' \item Warton, David & Thibaut, Loïc & Wang, Yi. (2017). The PIT-trap—A “model-free” bootstrap procedure for inference about regression models with discrete, multivariate responses. PLoS ONE. 12. 10.1371/journal.pone.0181790. 
+##' \item Millar, Russell B. Maximum Likelihood Estimation and Inference: With Examples in R, SAS and ADMB. John Wiley & Sons, 2011.
+##' }
+
 ##' @keywords models
 ##' @examples
 ##' data(Tasmania, package = "mvabund")
-##' m1 = nuglmm(abund ~ treatment * block, data=Tasmania, family="poisson")
-##' m2 = nuglmm(abund ~ treatment * block, data=Tasmania, family="nbinom2")
+##' m1 = nuglmm(abund ~ treatment, data=Tasmania, family=nbinom2())
+##' m2 = nuglmm(abund ~ treatment + (1|block), data=Tasmania, family=nbinom2())
 ##' anova(m1, m2)
 ##' @importFrom glmmTMB glmmTMB
-##' @importFrom lme4 subbars findbars mkReTrms nobars
+##' @importFrom lme4 findbars
 ##' @importFrom methods is
-##' @importFrom stats var getCall pchisq anova
+##' @importFrom stats gaussian binomial poisson nlminb as.formula terms model.weights
 ##' @export
 nuglmm <- function(formula, data = NULL, offset=NULL, weights = NULL, ...) {
   
@@ -105,7 +125,7 @@ nuglmm <- function(formula, data = NULL, offset=NULL, weights = NULL, ...) {
   
   
   # treat existing random effects
-  reTerms = lme4:::findbars(formula)
+  reTerms = lme4::findbars(formula)
   
   for (ireTerm in seq_along(reTerms)) {
     reTerm = reTerms[[ireTerm]]

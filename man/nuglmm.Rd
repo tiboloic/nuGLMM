@@ -2,28 +2,58 @@
 % Please edit documentation in R/nuglmm.R
 \name{nuglmm}
 \alias{nuglmm}
-\title{Generalized LMM for multivariate abundance data}
+\title{Generalized linear mixed effect models for multivariate abundance data}
 \usage{
 nuglmm(formula, data = NULL, offset = NULL, weights = NULL, ...)
 }
 \arguments{
-\item{formula}{model specification}
+\item{formula}{combined fixed and random effects formula, following lme4 and glmmTMB
+syntax. The left hand side must evaluate to an abundance matrix with species in columns.}
 
-\item{data}{dataframe}
+\item{data}{data frame}
 
-\item{\dots}{optional additional arguments. Currently none are used in any
-methods.}
+\item{offset}{offset for conditional model (only)}
+
+\item{weights}{weights, as in \code{glm}. Not automatically scaled to have sum 1.}
+
+\item{family}{a family function, a character string naming a family function, or the result of a call to a family function family (variance/link function) information; see \code{\link{family}} for generic discussion of families or \code{\link{family_glmmTMB}} for details of \code{glmmTMB}-specific families.
+Only \code{gaussian()}, \code{binomial()}, \code{poisson()} and \code{nbinom2()} are compatible with nuglmm.}
+
+\item{ziformula}{Zero-inflation is not yet available in nuglmm.}
+
+\item{dispformula}{a \emph{one-sided} formula for dispersion containing only fixed effects: the
+default \code{~1} specifies the standard dispersion given any family.
+The argument is ignored for families that do not have a dispersion parameter.
+For an explanation of the dispersion parameter for each family, see (\code{\link{sigma}}).
+The dispersion model uses a log link. 
+In Gaussian mixed models, \code{dispformula=~0} fixes the parameter to be 0, forcing variance into the random effects.}
+
+\item{contrasts}{an optional list, e.g. \code{list(fac1="contr.sum")}. See the \code{contrasts.arg} of \code{\link{model.matrix.default}}.}
+
+\item{na.action}{how to handle missing values (see \code{\link{na.action}} and \code{\link{model.frame}}); from \code{\link{lm}}, \dQuote{The default is set by the \code{\link{na.action}} setting of \code{\link{options}}, and is \code{\link{na.fail}} if that is unset.  The \sQuote{factory-fresh} default is \code{\link{na.omit}}.}}
 }
 \value{
 a fitted nuglmm model.
 }
 \description{
-Fits nuglmm models to multiavriate abundance data
+Fit glmms to multivariate abundance data using glmmTMB
+}
+\details{
+\itemize{
+\item binomial models with more than one trial (i.e., not binary/Bernoulli)
+must be specified in the form \code{prob ~ ..., weights = N}.
+}
 }
 \examples{
 data(Tasmania, package = "mvabund")
-m1 = nuglmm(abund ~ treatment * block, data=Tasmania, family="poisson")
-m2 = nuglmm(abund ~ treatment * block, data=Tasmania, family="nbinom2")
+m1 = nuglmm(abund ~ treatment, data=Tasmania, family=nbinom2())
+m2 = nuglmm(abund ~ treatment + (1|block), data=Tasmania, family=nbinom2())
 anova(m1, m2)
+}
+\references{
+\itemize{
+\item Warton, David & Thibaut, Loïc & Wang, Yi. (2017). The PIT-trap—A “model-free” bootstrap procedure for inference about regression models with discrete, multivariate responses. PLoS ONE. 12. 10.1371/journal.pone.0181790. 
+\item Millar, Russell B. Maximum Likelihood Estimation and Inference: With Examples in R, SAS and ADMB. John Wiley & Sons, 2011.
+}
 }
 \keyword{models}

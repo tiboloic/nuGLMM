@@ -3,9 +3,11 @@ Type: Package
 Title: Generalized Linear Mixed Effects models for multivariate abundance data
 Version: 0.1
 Date: 2018-11-01
-Author: Loic Thibaut
-Maintainer: Loic Thibaut <Loic.Thibaut@gmail.com>
-Description: nuGLMM provides tools to fit Generalized Linear Mixed Effects models on multivariate abundance data and tools for inference using simulations (the PIT-trap).
+Author: c(person("David","Warton",role="aut"),
+          person("Loïc", "Thibaut", role=c("aut","cre"),
+                   email="Loic.Thibaut@gmail.com")))
+Maintainer: Loïc Thibaut <Loic.Thibaut@gmail.com>
+Description: nuGLMM provides tools to fit Generalized Linear Mixed Effects models on multivariate abundance data. It handles random effects, provides regularization and simulation-based inference using the PIT-trap.
 License: GPL
 Imports: glmmTMB
 Encoding: UTF-8
